@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cookie 设置</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 22px;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .card h3 {
+            font-size: 16px;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .card p {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.6;
+        }
+        .steps {
+            font-size: 14px;
+            color: #555;
+            line-height: 2;
+            padding-left: 20px;
+        }
+        textarea {
+            width: 100%;
+            height: 120px;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            resize: vertical;
+            outline: none;
+            margin-bottom: 12px;
+        }
+        textarea:focus { border-color: #fe2c55; }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            cursor: pointer;
+        }
+        button:active { transform: scale(0.98); }
+        .btn-save { background: #4caf50; color: white; }
+        .btn-clear { background: #f44336; color: white; }
+        .btn-save:disabled, .btn-clear:disabled { background: #ccc; cursor: not-allowed; }
+        .status-msg {
+            text-align: center;
+            margin-top: 12px;
+            font-size: 14px;
+            min-height: 20px;
+        }
+        .status-msg.success { color: #4caf50; }
+        .status-msg.error { color: #f44336; }
+        .note {
+            background: #e3f2fd;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 13px;
+            color: #1565c0;
+            margin-bottom: 16px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .footer a {
+            color: #666;
+            text-decoration: none;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚙️ Cookie 设置</h1>
+
+        <div class="note">
+            💡 Cookie 是可选的。不登录也能下载公开视频，登录后可获得最高画质。
+        </div>
+
+        <div class="card">
+            <h3>如何获取 Cookie</h3>
+            <ol class="steps">
+                <li>iPhone 安装 <strong>Stream</strong> App（App Store 免费）</li>
+                <li>打开 Stream → 开始抓包</li>
+                <li>打开抖音 App，随便刷几个视频</li>
+                <li>回到 Stream → 停止抓包</li>
+                <li>搜索 <strong>douyin.com</strong> 的请求</li>
+                <li>点开任意请求 → 复制 <strong>Cookie</strong> 字段内容</li>
+            </ol>
+        </div>
+
+        <div class="card">
+            <h3>粘贴 Cookie</h3>
+            <textarea id="cookieInput" placeholder="在此粘贴 Cookie 内容..."></textarea>
+            <div class="btn-group">
+                <button class="btn-save" id="saveBtn" onclick="saveCookie()">保存登录</button>
+                <button class="btn-clear" id="clearBtn" onclick="clearCookie()">清除登录</button>
+            </div>
+            <div class="status-msg" id="statusMsg"></div>
+        </div>
+
+        <div class="footer">
+            <a href="index.html">← 返回下载页</a>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "https://douk-api.cathubing.workers.dev";
+        const SUPABASE_URL = "https://rwarwcxhdglauucdmosu.supabase.co";
+        const SUPABASE_KEY = "sb_publishable_e_sM4bpudyzxL1M7ktpjLQ_8lhNCFJA"; // 替换为你的 anon key
+
+        async function saveCookie() {
+            const cookie = document.getElementById("cookieInput").value.trim();
+            if (!cookie) {
+                showStatus("请先粘贴 Cookie", "error");
+                return;
+            }
+            await updateCookie(cookie);
+        }
+
+        async function clearCookie() {
+            await updateCookie("");
+        }
+
+        async function updateCookie(cookieValue) {
+            const saveBtn = document.getElementById("saveBtn");
+            const clearBtn = document.getElementById("clearBtn");
+            saveBtn.disabled = true;
+            clearBtn.disabled = true;
+            showStatus("⏳ 正在保存...", "");
+
+            const errors = [];
+
+            // 步骤 1：调用 POST /settings 立即生效
+            try {
+                const res = await fetch(`${API_BASE}/settings`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ cookie: cookieValue })
+                });
+                if (!res.ok) errors.push("API 更新失败");
+            } catch (e) {
+                errors.push("API 连接失败");
+            }
+
+            // 步骤 2：写入 Supabase 持久化
+            try {
+                const res = await fetch(`${SUPABASE_URL}/rest/v1/cookies?key=eq.douyin`, {
+                    method: "PATCH",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "apikey": SUPABASE_KEY,
+                        "Authorization": `Bearer ${SUPABASE_KEY}`,
+                        "Prefer": "return=minimal"
+                    },
+                    body: JSON.stringify({
+                        value: cookieValue,
+                        updated_at: new Date().toISOString()
+                    })
+                });
+                if (!res.ok) errors.push("数据库保存失败");
+            } catch (e) {
+                errors.push("数据库连接失败");
+            }
+
+            // 结果判断
+            if (errors.length === 0) {
+                const msg = cookieValue ? "✅ 已登录，最高画质已开启" : "✅ 已退出登录，基础功能仍可用";
+                showStatus(msg, "success");
+                if (!cookieValue) document.getElementById("cookieInput").value = "";
+            } else if (errors.length === 1) {
+                showStatus("⚠️ 部分成功：" + errors[0], "success");
+            } else {
+                showStatus("❌ 保存失败：" + errors.join("，"), "error");
+            }
+
+            saveBtn.disabled = false;
+            clearBtn.disabled = false;
+        }
+
+        function showStatus(msg, type) {
+            const el = document.getElementById("statusMsg");
+            el.textContent = msg;
+            el.className = "status-msg " + type;
+        }
+    </script>
+</body>
+</html>

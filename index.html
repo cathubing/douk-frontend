@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>抖音视频下载</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 24px;
+        }
+        .status {
+            text-align: center;
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 20px;
+        }
+        .status.logged-in { color: #4caf50; }
+        .status.not-logged { color: #999; }
+        .input-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            outline: none;
+        }
+        input[type="text"]:focus { border-color: #fe2c55; }
+        button {
+            padding: 12px 20px;
+            background: #fe2c55;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        button:active { transform: scale(0.98); }
+        .result {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: none;
+        }
+        .result.show { display: block; }
+        .video-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        .video-author {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 12px;
+        }
+        .download-links a {
+            display: block;
+            padding: 10px 16px;
+            margin: 6px 0;
+            background: #fe2c55;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 15px;
+        }
+        .download-links a:active { background: #d4243f; }
+        .error {
+            color: #f44336;
+            text-align: center;
+            margin-top: 12px;
+            font-size: 14px;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+            margin-top: 12px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+        }
+        .footer a {
+            color: #666;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .note {
+            background: #fff3cd;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎵 抖音视频下载</h1>
+        <p class="status not-logged" id="loginStatus">⚪ 未登录（基础画质）</p>
+
+        <div class="note">
+            💡 无需登录即可下载公开视频。登录后可获得最高画质。
+        </div>
+
+        <div class="input-group">
+            <input type="text" id="urlInput" placeholder="粘贴抖音链接...">
+            <button id="parseBtn" onclick="parseVideo()">解析</button>
+        </div>
+
+        <div class="loading" id="loading" style="display:none;">⏳ 正在解析...</div>
+        <div class="error" id="error"></div>
+
+        <div class="result" id="result">
+            <div class="video-title" id="videoTitle"></div>
+            <div class="video-author" id="videoAuthor"></div>
+            <div class="download-links" id="downloadLinks"></div>
+        </div>
+
+        <div class="footer">
+            <a href="settings.html">⚙️ Cookie 设置</a>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "https://douk-api.cathubing.workers.dev";
+
+        async function parseVideo() {
+            const url = document.getElementById("urlInput").value.trim();
+            if (!url) return;
+
+            document.getElementById("loading").style.display = "block";
+            document.getElementById("error").textContent = "";
+            document.getElementById("result").classList.remove("show");
+            document.getElementById("parseBtn").disabled = true;
+
+            try {
+                // 先解析分享链接获取完整链接
+                const shareRes = await fetch(`${API_BASE}/douyin/share`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ text: url })
+                });
+                const shareData = await shareRes.json();
+
+                // 从完整链接提取作品ID
+                let detailId = "";
+                const fullUrl = shareData.url || url;
+                const match = fullUrl.match(/video\/(\d+)/) || fullUrl.match(/note\/(\d+)/) || fullUrl.match(/modal_id=(\d+)/);
+                if (match) {
+                    detailId = match[1];
+                } else {
+                    throw new Error("无法从链接中提取作品ID，请检查链接是否正确");
+                }
+
+                // 获取作品详情
+                const detailRes = await fetch(`${API_BASE}/douyin/detail`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ detail_id: detailId })
+                });
+                const detailData = await detailRes.json();
+
+                if (!detailData.data) {
+                    throw new Error(detailData.message || "获取视频信息失败");
+                }
+
+                displayResult(detailData.data);
+            } catch (e) {
+                document.getElementById("error").textContent = "❌ " + e.message;
+            } finally {
+                document.getElementById("loading").style.display = "none";
+                document.getElementById("parseBtn").disabled = false;
+            }
+        }
+
+        function displayResult(data) {
+            document.getElementById("videoTitle").textContent = data.desc || "无标题";
+            document.getElementById("videoAuthor").textContent = "👤 " + (data.nickname || "未知作者");
+
+            const linksDiv = document.getElementById("downloadLinks");
+            linksDiv.innerHTML = "";
+
+            // 视频下载链接
+            if (data.downloads) {
+                data.downloads.forEach((url, i) => {
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.target = "_blank";
+                    a.textContent = `📥 下载视频 ${i + 1}`;
+                    linksDiv.appendChild(a);
+                });
+            } else if (data.download_url) {
+                const a = document.createElement("a");
+                a.href = data.download_url;
+                a.target = "_blank";
+                a.textContent = "📥 下载视频（无水印）";
+                linksDiv.appendChild(a);
+            }
+
+            // 图集下载
+            if (data.images && data.images.length > 0) {
+                data.images.forEach((url, i) => {
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.target = "_blank";
+                    a.textContent = `🖼️ 下载图片 ${i + 1}`;
+                    linksDiv.appendChild(a);
+                });
+            }
+
+            if (linksDiv.children.length === 0) {
+                linksDiv.innerHTML = "<p style='color:#666;text-align:center;'>未找到下载链接，可能需要登录 Cookie</p>";
+            }
+
+            document.getElementById("result").classList.add("show");
+        }
+    </script>
+</body>
+</html>
